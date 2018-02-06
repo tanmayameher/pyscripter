@@ -9,12 +9,12 @@ unit cPyBaseDebugger;
 
 interface
 uses
-  Windows, SysUtils, Classes, uEditAppIntfs, PythonEngine, Forms,
-  Contnrs, cTools, cPythonSourceScanner;
+  Windows, SysUtils, Classes, uEditAppIntfs, Forms,
+  Contnrs, cTools, cPythonSourceScanner, PythonEngine;
 
 type
   TPythonEngineType = (peInternal, peRemote, peRemoteTk, peRemoteWx);
-  TDebuggerState = (dsInactive, dsRunning, dsPaused, dsRunningNoDebug, dsPostMortem);
+  TDebuggerState = (dsInactive, dsDebugging, dsPaused, dsRunning, dsPostMortem);
   TDebuggerCommand = (dcNone, dcRun, dcStepInto, dcStepOver, dcStepOut,
                       dcRunToCursor, dcPause, dcAbort);
 
@@ -163,7 +163,7 @@ type
     procedure ReInitialize; virtual;
     // Main interface
     function ImportModule(Editor : IEditor; AddToNameSpace : Boolean = False) : Variant; virtual; abstract;
-    procedure RunNoDebug(ARunConfig : TRunConfiguration); virtual; abstract;
+    procedure Run(ARunConfig : TRunConfiguration); virtual; abstract;
     function RunSource(Const Source, FileName : Variant; symbol : string = 'single') : boolean; virtual; abstract;
     procedure RunScript(FileName : string); virtual;
     function EvalCode(const Expr : string) : Variant; virtual; abstract;
@@ -187,7 +187,7 @@ type
     function SysPathRemove(const Path : string) : boolean; virtual; abstract;
     function AddPathToPythonPath(const Path : string; AutoRemove : Boolean = True) : IInterface;
     // Debugging
-    procedure Run(ARunConfig : TRunConfiguration; InitStepIn : Boolean = False;
+    procedure Debug(ARunConfig : TRunConfiguration; InitStepIn : Boolean = False;
             RunToCursorLine : integer = -1); virtual; abstract;
     procedure RunToCursor(Editor : IEditor; ALine: integer); virtual; abstract;
     procedure StepInto; virtual; abstract;
@@ -401,11 +401,12 @@ const
 implementation
 
 uses
+  System.UITypes, Dialogs,
   dmCommands, frmPythonII, frmMessages, frmPyIDEMain,
   uCommonFunctions, VarPyth,
   cParameters, StringResources, cPyDebugger,
-  frmCommandOutput, JvGnugettext, cProjectClasses,
-  System.UITypes, Dialogs;
+  frmCommandOutput, JvGnuGettext,
+  cPyScripterSettings;
 
 { TEditorPos }
 
@@ -515,7 +516,7 @@ begin
       Editor := GI_EditorFactory.GetEditorByNameOrTitle(FileName);
       // Check whether the error occurred in the active editor
       if (Assigned(Editor) and (Editor = PyIDEMainForm.GetActiveEditor)) or
-        CommandsDataModule.PyIDEOptions.JumpToErrorOnException then
+        PyIDEOptions.JumpToErrorOnException then
       begin
         if PyIDEMainForm.ShowFilePosition(TI.FileName, TI.LineNo, 1) and
           Assigned(GI_ActiveEditor)
@@ -627,7 +628,7 @@ begin
     PythonIIForm.StartOutputMirror(Parameters.ReplaceInText(fRunConfig.OutputFileName),
       fRunConfig.AppendToFile);
   try
-    ActiveDebugger.Run(fRunConfig, InitStepIn, RunToCursorLine);
+    ActiveDebugger.Debug(fRunConfig, InitStepIn, RunToCursorLine);
   finally
     if fRunConfig.WriteOutputToFile then
       PythonIIForm.StopFileMirror;
@@ -827,7 +828,7 @@ Var
   OldDebuggerState: TDebuggerState;
 begin
   OldDebuggerState := fDebuggerState;
-  if NewState in [dsInactive, dsRunning, dsRunningNoDebug] then
+  if NewState in [dsInactive, dsDebugging, dsRunning] then
     CurrentPos.Clear
   else begin
     ErrorPos.Clear;
@@ -853,16 +854,16 @@ end;
 
 procedure TPythonControl.PrepareRun;
 begin
-  if CommandsDataModule.PyIDEOptions.SaveFilesBeforeRun then begin
+  if PyIDEOptions.SaveFilesBeforeRun then begin
     PyIDEMainForm.SaveFileModules;
 //    Application.ProcessMessages;
 //    Application.DoApplicationIdle;
 //    Application.ProcessMessages;
     PyIDEMainForm.Refresh;        // To update save flags
   end;
-  if CommandsDataModule.PyIDEOptions.SaveEnvironmentBeforeRun then
+  if PyIDEOptions.SaveEnvironmentBeforeRun then
     PyIDEMainForm.SaveEnvironment;
-  if CommandsDataModule.PyIDEOptions.ClearOutputBeforeRun then
+  if PyIDEOptions.ClearOutputBeforeRun then
     PythonIIForm.actClearContentsExecute(nil);
 
   if fRunConfig.EngineType <> PythonEngineType then
@@ -887,7 +888,7 @@ end;
 
 function TPythonControl.IsRunning: boolean;
 begin
-  Result := fDebuggerState in [dsRunning, dsRunningNoDebug];
+  Result := fDebuggerState in [dsDebugging, dsRunning];
 end;
 
 procedure TPythonControl.Run(ARunConfig: TRunConfiguration);
@@ -902,7 +903,7 @@ begin
     PythonIIForm.StartOutputMirror(Parameters.ReplaceInText(fRunConfig.OutputFileName),
       fRunConfig.AppendToFile);
   try
-    ActiveInterpreter.RunNoDebug(fRunConfig);
+    ActiveInterpreter.Run(fRunConfig);
   finally
     if fRunConfig.WriteOutputToFile then
       PythonIIForm.StopFileMirror;

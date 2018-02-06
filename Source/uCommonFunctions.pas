@@ -211,46 +211,55 @@ function GetHotColor(OptionEntry : TSpTBXSkinOptionEntry) : TColor;
 (* Improved CanFocus *)
 function CanActuallyFocus(WinControl: TWinControl): Boolean;
 
-{ Create a Regular Expression and compile it}
+(* Create a Regular Expression and compile it *)
 function CompiledRegExpr(Expr : string): TRegExpr;
 
-{ Checks whether S contains digits only }
+(* Checks whether S contains digits only *)
 function IsDigits(S : string): Boolean;
 
-{ Remove the white space in front of the first line from all lines }
+(* Remove the white space in front of the first line from all lines *)
 function Dedent (const S : string) : string;
 
-{ Returns true for dark colors }
+(* Returns true for dark colors *)
 function IsColorDark(AColor : TColor) : boolean;
 
-{ Returns true if the styled clWindows system oolor is dark }
+(* Returns true if the styled clWindows system oolor is dark *)
 function IsStyledWindowsColorDark : boolean;
 
-{ Adds formated text to a Richedit control }
+(* Adds formated text to a Richedit control *)
 procedure AddFormatText(RE : TRichEdit; const S: string;  FontStyle: TFontStyles = [];
  const FontColor: TColor = clDefault; FontSize: Integer = 0);
 
-{ Scales the images of an ImageList }
+(* Scales the images of an ImageList *)
 procedure ScaleImageList(const ImgList: TImageList; M, D: Integer);
 
-{ Resize Bitmap }
+(* Resize Bitmap *)
 procedure ResizeBitmap(Bitmap: TBitmap; const NewWidth, NewHeight: integer);
 
-{ Scale a value according to the Screen.PixelperInch }
+(* Scale a value according to the Screen.PixelperInch *)
 function PPIScaled(I : Integer): Integer;
 
-{ Reverse PPI Scaling  }
+(* Reverse PPI Scaling  *)
 function PPIUnScaled(I : Integer): Integer;
 
- Const
+(* Returns string with Desktop size *)
+function DesktopSizeString: string;
+
+(* Downlads a file from the Interent *)
+function DownloadUrlToFile(const URL, Filename: string): Boolean;
+
+Const
   IdentRE = '[A-Za-z_][A-Za-z0-9_]*';
   DottedIdentRE = '[A-Za-z_][A-Za-z0-9_.]*';
 
+
 Type
-  {  TStringlist that preserves the LineBreak of a read File }
+  {  TStringlist that preserves the LineBreak and BOM of a read File }
   TLineBreakStringList = class(TStringList)
   protected
     procedure SetTextStr(const Value: string); override;
+  public
+    procedure LoadFromStream(Stream: TStream); override;
   end;
 
 implementation
@@ -259,7 +268,9 @@ Uses
   StrUtils, PythonEngine, dmCommands, Dialogs,
   StringResources, frmPythonII, JvGnugettext, MPCommonUtilities,
   MPCommonObjects, MPShellUtilities, IOUtils, Vcl.Themes, System.AnsiStrings,
-  System.UITypes, Winapi.CommCtrl, JclStrings, JvAppStorage, SynEditMiscClasses;
+  System.UITypes, Winapi.CommCtrl, JclStrings, SynEditMiscClasses,
+  cPyScripterSettings,   Winapi.UrlMon,
+  SynEditTextBuffer;
 
 function GetIconIndexFromFile(const AFileName: string;
   const ASmall: boolean): integer;
@@ -1415,7 +1426,36 @@ begin
         // This routine detects UTF8 text even if there is no BOM
         FileEncoding := GetEncoding(FileStream, HasBOM);
         case FileEncoding of
-          seAnsi : Encoding := sf_Ansi;
+          seAnsi :
+            // if it is a Pytyhon file detect an encoding spec
+            if IsPythonFile then
+            begin
+              PyEncoding := '';
+              S := ReadLnFromStream(FileStream);
+              PyEncoding := AnsiString(ParsePySourceEncoding(string(S)));
+              if PyEncoding = '' then begin
+                S := ReadLnFromStream(FileStream);
+                PyEncoding := AnsiString(ParsePySourceEncoding(string(S)));
+              end;
+              FileStream.Seek(0, soFromBeginning);
+              if PyEncoding <> '' then
+              begin
+                if (LowerCase(PyEncoding) = 'utf-8') or (LowerCase(PyEncoding) = 'utf8')
+                then
+                  Encoding := sf_UTF8_NoBOM
+                else
+                  Encoding := sf_Ansi;
+              end
+              else
+              begin
+                if GetPythonEngine.IsPython3000 then
+                  Encoding := sf_UTF8_NoBOM
+                else
+                  Encoding := sf_Ansi;
+              end;
+            end else
+              Encoding := sf_Ansi;
+
           seUTF8 :
             begin
               if not HasBOM then begin
@@ -1425,7 +1465,7 @@ begin
 //                  // File will still be read as UTF8 if it has an encoding comment
 //                  Encoding := sf_Ansi
 //                else begin
-                  if CommandsDataModule.PyIDEOptions.DetectUTF8Encoding then
+                  if PyIDEOptions.DetectUTF8Encoding then
                     Encoding := sf_UTF8_NoBOM
                   else
                     Encoding := sf_Ansi;
@@ -1442,38 +1482,26 @@ begin
         case Encoding of
           sf_Ansi :
             // if it is a Pytyhon file detect an encoding spec
-            if IsPythonFile then begin
-              PyEncoding := '';
-              S := ReadLnFromStream(FileStream);
-              PyEncoding := AnsiString(ParsePySourceEncoding(string(S)));
-              if PyEncoding = '' then begin
-                S := ReadLnFromStream(FileStream);
-                PyEncoding := AnsiString(ParsePySourceEncoding(string(S)));
-              end;
-              FileStream.Seek(0, soFromBeginning);
-              if PyEncoding <> '' then begin
-                if PyEncoding = 'utf-8' then
-                  Encoding := sf_UTF8_NoBOM;
-                PyWstr := nil;
-                try
-                  with GetPythonEngine do begin
-                    try
-                        PyWstr := GetPythonEngine.PyUnicode_Decode(PAnsiChar(FileText),
-                          Length(FileText),
-                          PAnsiChar(PyEncoding), 'replace');
-                        CheckError;
-                        Lines.Text := PyUnicode_AsWideString(PyWstr);
-                    finally
-                      Py_XDECREF(PyWstr);
-                    end;
+            if IsPythonFile and (PyEncoding <> '') then
+            begin
+              PyWstr := nil;
+              try
+                with GetPythonEngine do begin
+                  try
+                      PyWstr := GetPythonEngine.PyUnicode_Decode(PAnsiChar(FileText),
+                        Length(FileText),
+                        PAnsiChar(PyEncoding), 'replace');
+                      CheckError;
+                      Lines.Text := PyUnicode_AsWideString(PyWstr);
+                  finally
+                    Py_XDECREF(PyWstr);
                   end;
-                except
-                  Dialogs.MessageDlg(Format(_(SDecodingError),
-                     [AFileName, PyEncoding]), mtWarning, [mbOK], 0);
-                  Lines.Text := string(FileText);
                 end;
-              end else
-                Lines.LoadFromStream(FileStream);
+              except
+                Dialogs.MessageDlg(Format(_(SDecodingError),
+                   [AFileName, PyEncoding]), mtWarning, [mbOK], 0);
+                Lines.Text := string(FileText);
+              end;
             end else
               Lines.LoadFromStream(FileStream);
           sf_UTF8, sf_UTF8_NoBOM :
@@ -1496,6 +1524,9 @@ begin
     Result := False;
 end;
 
+type
+  TSynEditStringListAccess = class(TSynEditStringList);
+
 (* Save WideStrings to file taking into account Python file encodings *)
 function SaveWideStringsToFile(const AFileName: string;
   Lines : TStrings; Encoding : TFileSaveFormat;
@@ -1503,6 +1534,7 @@ function SaveWideStringsToFile(const AFileName: string;
 Var
   FileStream : TFileStream;
   S : AnsiString;
+  SaveFStreaming: Boolean;
 begin
   try
     // Create Backup
@@ -1519,8 +1551,18 @@ begin
 
     Result := True;
 
-    if Encoding = sf_Ansi then
+    if Encoding = sf_Ansi then begin
+      if Lines is TSynEditStringList then
+      begin
+        SaveFStreaming := TSynEditStringListAccess(Lines).FStreaming;
+        TSynEditStringListAccess(Lines).FStreaming := True;
+      end;
+
       Result := WideStringsToEncodedText(AFileName, Lines, S, True);
+
+      if Lines is TSynEditStringList then
+        TSynEditStringListAccess(Lines).FStreaming := SaveFStreaming;
+    end;
 
     if Result then begin
       FileStream := TFileStream.Create(AFileName, fmCreate);
@@ -1822,6 +1864,18 @@ end;
 
 { TLineBreakeStingList }
 
+procedure TLineBreakStringList.LoadFromStream(Stream: TStream);
+Var
+  HasBOM : Boolean;
+begin
+  if IsUTF8(Stream, HasBOM) then begin
+    WriteBOM := HasBOM;
+    LoadFromStream(Stream, Encoding.UTF8);
+  end
+  else
+    inherited;
+end;
+
 procedure TLineBreakStringList.SetTextStr(const Value: string);
 var
   S: string;
@@ -2002,125 +2056,15 @@ begin
   Result := MulDiv(I, 96, Screen.PixelsPerInch);
 end;
 
-
-type
-// Modify JvAppStorage handling of Fonts
-// We want to store Font.Size and not Font.Height
-TJvAppStorageFontPropertyEngine = class(TJvAppStoragePropertyBaseEngine)
-  private
-    class var FFontIgnoreProperties: TStringList;
-public
-  function Supports(AObject: TObject; AProperty: TObject): Boolean; override;
-  procedure ReadProperty(AStorage: TJvCustomAppStorage; const APath: string; AObject: TObject; AProperty: TObject; const Recursive,
-    ClearFirst: Boolean; const IgnoreProperties: TStrings = nil); override;
-  procedure WriteProperty(AStorage: TJvCustomAppStorage; const APath: string; AObject: TObject; AProperty: TObject; const
-    Recursive: Boolean; const IgnoreProperties: TStrings = nil); override;
-  class property FontIgnoreProperties : TStringList read FFontIgnoreProperties;
-strict private
-  class constructor Create;
-  class destructor Destroy;
-end;
-
-
-{ TJvAppStorageFontPropertyEngine }
-
-function TJvAppStorageFontPropertyEngine.Supports(AObject,
-  AProperty: TObject): Boolean;
+function DesktopSizeString: string;
 begin
-  Result := AProperty is TFont;
+  Result := Format('(%dx%d)', [Screen.DesktopWidth, Screen.DesktopHeight]);
 end;
 
-class constructor TJvAppStorageFontPropertyEngine.Create;
+
+function DownloadUrlToFile(const URL, Filename: string): Boolean;
 begin
-  TJvAppStorageFontPropertyEngine.FFontIgnoreProperties := TStringList.Create;
-  with TJvAppStorageFontPropertyEngine.FFontIgnoreProperties do begin
-    Add('Height');
-    Add('Charset');
-    Add('Orientation');
-    Add('Pitch');
-    Add('Quality');
-  end;
+  Result := Succeeded(URLDownloadToFile(nil, PWideChar(URL), PWideChar(Filename), 0, nil));
 end;
 
-class destructor TJvAppStorageFontPropertyEngine.Destroy;
-begin
-  TJvAppStorageFontPropertyEngine.FFontIgnoreProperties.Free;
-end;
-
-procedure TJvAppStorageFontPropertyEngine.ReadProperty(
-  AStorage: TJvCustomAppStorage; const APath: string; AObject,
-  AProperty: TObject; const Recursive, ClearFirst: Boolean;
-  const IgnoreProperties: TStrings);
-begin
-  // Font Size is a published property and is read
-  AStorage.ReadPersistent(APath, AProperty as TFont, Recursive, ClearFirst,
-    TJvAppStorageFontPropertyEngine.FFontIgnoreProperties);
-end;
-
-procedure TJvAppStorageFontPropertyEngine.WriteProperty(
-  AStorage: TJvCustomAppStorage; const APath: string; AObject,
-  AProperty: TObject; const Recursive: Boolean;
-  const IgnoreProperties: TStrings);
-begin
-  AStorage.WritePersistent(APath, AProperty as TFont, Recursive,
-    TJvAppStorageFontPropertyEngine.FFontIgnoreProperties);
-  AStorage.WriteInteger(APath + '\Size', (AProperty as TFont).Size);
-end;
-
-
-type
-// Modify JvAppStorage handling of TSynGutter
-// We want to PPI scale size properties
-TJvAppStorageGutterPropertyEngine = class(TJvAppStoragePropertyBaseEngine)
-public
-  function Supports(AObject: TObject; AProperty: TObject): Boolean; override;
-  procedure ReadProperty(AStorage: TJvCustomAppStorage; const APath: string; AObject: TObject; AProperty: TObject; const Recursive,
-    ClearFirst: Boolean; const IgnoreProperties: TStrings = nil); override;
-  procedure WriteProperty(AStorage: TJvCustomAppStorage; const APath: string; AObject: TObject; AProperty: TObject; const
-    Recursive: Boolean; const IgnoreProperties: TStrings = nil); override;
-end;
-
-{ TJvAppStorageGutterPropertyEngine }
-
-function TJvAppStorageGutterPropertyEngine.Supports(AObject,
-  AProperty: TObject): Boolean;
-begin
-  Result := AProperty is TSynGutter;
-end;
-
-procedure TJvAppStorageGutterPropertyEngine.ReadProperty(
-  AStorage: TJvCustomAppStorage; const APath: string; AObject,
-  AProperty: TObject; const Recursive, ClearFirst: Boolean;
-  const IgnoreProperties: TStrings);
-Var
-  FontSize : Integer;
-begin
-  AStorage.ReadPersistent(APath, AProperty as TSynGutter, Recursive, ClearFirst,
-    IgnoreProperties);
-  FontSize := TSynGutter(AProperty).Font.Size;
-  TSynGutter(AProperty).ChangeScale(Screen.PixelsPerInch, 96);
-  TSynGutter(AProperty).Font.Size := FontSize;
-end;
-
-procedure TJvAppStorageGutterPropertyEngine.WriteProperty(
-  AStorage: TJvCustomAppStorage; const APath: string; AObject,
-  AProperty: TObject; const Recursive: Boolean;
-  const IgnoreProperties: TStrings);
-Var
-  FontSize : Integer;
-begin
-  FontSize := TSynGutter(AProperty).Font.Size;
-  TSynGutter(AProperty).ChangeScale(96, Screen.PixelsPerInch);
-  TSynGutter(AProperty).Font.Size := FontSize;
-  AStorage.StorageOptions.StoreDefaultValues := True;
-  AStorage.WritePersistent(APath, AProperty as TSynGutter, Recursive,
-    IgnoreProperties);
-  AStorage.StorageOptions.StoreDefaultValues := False;
-  TSynGutter(AProperty).ChangeScale(Screen.PixelsPerInch, 96);
-  TSynGutter(AProperty).Font.Size := FontSize;
-end;
-
-initialization
-  RegisterAppStoragePropertyEngine(TJvAppStorageFontPropertyEngine);
-  RegisterAppStoragePropertyEngine(TJvAppStorageGutterPropertyEngine);
 end.

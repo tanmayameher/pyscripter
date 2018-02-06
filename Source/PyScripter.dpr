@@ -81,7 +81,6 @@ uses
   cFilePersist in 'cFilePersist.pas',
   dlgPickList in 'dlgPickList.pas' {PickListDialog},
   dlgAboutPyScripter in 'dlgAboutPyScripter.pas' {AboutBox},
-  JvProgramVersionCheck in 'JvProgramVersionCheck.pas',
   cPyBaseDebugger in 'cPyBaseDebugger.pas',
   cPyRemoteDebugger in 'cPyRemoteDebugger.pas',
   cFileTemplates in 'cFileTemplates.pas',
@@ -114,7 +113,8 @@ uses
   Vcl.StdCtrls,
   VCL.Styles.PyScripter in 'VCL.Styles.PyScripter.pas' {/  Vcl.Styles.Utils.Forms;},
   VCL.Styles.DPIAware in 'VCL.Styles.DPIAware.pas',
-  TB2Toolbar in 'TB2Toolbar.pas';
+  TB2Toolbar in 'TB2Toolbar.pas',
+  cPyScripterSettings in 'cPyScripterSettings.pas';
 
 {$R *.RES}
 {$R WebCopyAvi.RES}
@@ -137,14 +137,14 @@ begin
     end;
   Application.MainFormOnTaskbar := True;
 
-  if TStyleManager.TrySetStyle('Windows10') then
-    TStyleSelectorForm.CurrentSkinName := 'Windows10';
+  if TStyleManager.TrySetStyle('Windows10 Dark') then
+    TStyleSelectorForm.CurrentSkinName := 'Windows10 Dark';
 
   Application.Title := 'PyScripter';
   Application.CreateForm(TCommandsDataModule, CommandsDataModule);
   Application.CreateForm(TPyIDEMainForm, PyIDEMainForm);
   Application.Run;
 
-end.
+ end.
 
 

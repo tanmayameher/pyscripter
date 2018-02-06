@@ -94,7 +94,7 @@ type
     procedure SetCommandLine(ARunConfig : TRunConfiguration); override;
     procedure RestoreCommandLine; override;
     function ImportModule(Editor : IEditor; AddToNameSpace : Boolean = False) : Variant; override;
-    procedure RunNoDebug(ARunConfig : TRunConfiguration); override;
+    procedure Run(ARunConfig : TRunConfiguration); override;
     function SyntaxCheck(Editor : IEditor; Quiet : Boolean = False) : Boolean;
     function RunSource(Const Source, FileName : Variant; symbol : string = 'single') : boolean; override;
     function EvalCode(const Expr : string) : Variant; override;
@@ -131,7 +131,7 @@ type
     function SysPathAdd(const Path : string) : boolean; override;
     function SysPathRemove(const Path : string) : boolean; override;
     // Debugging
-    procedure Run(ARunConfig : TRunConfiguration; InitStepIn : Boolean = False;
+    procedure Debug(ARunConfig : TRunConfiguration; InitStepIn : Boolean = False;
           RunToCursorLine : integer = -1); override;
     procedure RunToCursor(Editor : IEditor; ALine: integer); override;
     procedure StepInto; override;
@@ -163,10 +163,12 @@ var
 
 implementation
 
-uses dmCommands, frmPythonII, Variants, VarPyth, frmMessages, frmPyIDEMain,
+
+uses
+  dmCommands, frmPythonII, Variants, VarPyth, frmMessages, frmPyIDEMain,
   MMSystem, Math, uCommonFunctions,
-  cParameters, StringResources, Dialogs, JvDSADialogs, 
-  JvGnugettext, cRefactoring;
+  cParameters, StringResources, Dialogs, JvDSADialogs,
+  JvGnugettext, cRefactoring, cPyScripterSettings;
 
 { TFrameInfo }
 
@@ -597,7 +599,7 @@ begin
   fDebuggerCommand := dcRun;
 end;
 
-procedure TPyInternalDebugger.Run(ARunConfig: TRunConfiguration;
+procedure TPyInternalDebugger.Debug(ARunConfig: TRunConfiguration;
   InitStepIn: Boolean = False; RunToCursorLine : integer = -1);
 var
   Code : Variant;
@@ -610,7 +612,7 @@ begin
   CanDoPostMortem := False;
 
   // Repeat here to make sure it is set right
-  MaskFPUExceptions(CommandsDataModule.PyIDEOptions.MaskFPUExceptions);
+  MaskFPUExceptions(PyIDEOptions.MaskFPUExceptions);
 
   fDebuggerCommand := dcRun;
   Assert(PyControl.DebuggerState = dsInactive);
@@ -635,7 +637,7 @@ begin
       Dialogs.MessageDlg(_(SCouldNotSetDirectory), mtWarning, [mbOK], 0);
     end;
 
-    PyControl.DoStateChange(dsRunning);
+    PyControl.DoStateChange(dsDebugging);
 
     MessagesWindow.ClearMessages;
     Editor := GI_ActiveEditor;
@@ -714,7 +716,7 @@ begin
       PyControl.DoStateChange(dsInactive);
       if ReturnFocusToEditor then
         Editor.Activate;
-      if CanDoPostMortem and CommandsDataModule.PyIDEOptions.PostMortemOnException then
+      if CanDoPostMortem and PyIDEOptions.PostMortemOnException then
         EnterPostMortem;
     end;
   end;
@@ -820,7 +822,7 @@ begin
      PyControl.CurrentPos.Line := Frame.f_lineno;
      FCurrentFrame := Frame;
 
-      if PyControl.DebuggerState = dsRunning then
+      if PyControl.DebuggerState = dsDebugging then
         PyControl.DoStateChange(dsPaused);
      FDebuggerCommand := dcNone;
      While  FDebuggerCommand = dcNone do
@@ -828,7 +830,7 @@ begin
 
      if PyControl.BreakPointsChanged then SetDebuggerBreakpoints;
 
-     PyControl.DoStateChange(dsRunning);
+     PyControl.DoStateChange(dsDebugging);
    end;
 
    case fDebuggerCommand of
@@ -1129,7 +1131,7 @@ begin
   else
     NameOfModule := ChangeFileExt(Editor.FileTitle, '');
 
-  PyControl.DoStateChange(dsRunningNoDebug);
+  PyControl.DoStateChange(dsRunning);
   try
     try
       Result := fII._import(NameOfModule, Code);
@@ -1254,7 +1256,7 @@ begin
   end;
 end;
 
-procedure TPyInternalInterpreter.RunNoDebug(ARunConfig: TRunConfiguration);
+procedure TPyInternalInterpreter.Run(ARunConfig: TRunConfiguration);
 Var
   Code : Variant;
   mmResult,Resolution : LongWord;
@@ -1268,13 +1270,13 @@ begin
   CanDoPostMortem := False;
 
   // Repeat here to make sure it is set right
-  MaskFPUExceptions(CommandsDataModule.PyIDEOptions.MaskFPUExceptions);
+  MaskFPUExceptions(PyIDEOptions.MaskFPUExceptions);
 
   //Compile
   Code := Compile(ARunConfig);
 
   if VarIsPython(Code) then begin
-    PyControl.DoStateChange(dsRunningNoDebug);
+    PyControl.DoStateChange(dsRunning);
 
     // New Line for output
     PythonIIForm.AppendText(sLineBreak);
@@ -1308,12 +1310,12 @@ begin
 
     try
       // Set Multimedia Timer
-      if (CommandsDataModule.PyIDEOptions.TimeOut > 0) and
+      if (PyIDEOptions.TimeOut > 0) and
         (timeGetDevCaps(@tc, SizeOf(tc))=TIMERR_NOERROR) then
       begin
         Resolution := Min(Resolution,tc.wPeriodMax);
         TimeBeginPeriod(Resolution);
-        mmResult := TimeSetEvent(CommandsDataModule.PyIDEOptions.TimeOut, resolution,
+        mmResult := TimeSetEvent(PyIDEOptions.TimeOut, resolution,
           @TimeCallBack, DWORD(@mmResult), TIME_PERIODIC or 256);
       end;
 
@@ -1330,7 +1332,7 @@ begin
         end;
       end;
     finally
-      if CommandsDataModule.PyIDEOptions.TimeOut > 0 then begin
+      if PyIDEOptions.TimeOut > 0 then begin
         if (mmResult <> 0) then TimeKillEvent(mmResult);
         TimeEndPeriod(Resolution);
       end;
@@ -1348,7 +1350,7 @@ begin
       PyControl.DoStateChange(dsInactive);
       if ReturnFocusToEditor then
         Editor.Activate;
-      if CanDoPostMortem and CommandsDataModule.PyIDEOptions.PostMortemOnException then
+      if CanDoPostMortem and PyIDEOptions.PostMortemOnException then
         PyControl.ActiveDebugger.EnterPostMortem;
     end;
   end;
@@ -1361,7 +1363,7 @@ Var
 begin
   Assert(not PyControl.IsRunning, 'RunSource called while the Python engine is active');
   OldDebuggerState := PyControl.DebuggerState;
-  PyControl.DoStateChange(dsRunningNoDebug);
+  PyControl.DoStateChange(dsRunning);
   try
     // Workaround due to PREFER_UNICODE flag to make sure
     // no conversion to Unicode and back will take place

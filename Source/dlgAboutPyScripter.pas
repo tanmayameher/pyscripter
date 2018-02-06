@@ -1,4 +1,4 @@
-{-----------------------------------------------------------------------------
+﻿{-----------------------------------------------------------------------------
  Unit Name: dlgAboutPyScripter
  Author:    Kiriakos Vlahos
  Date:      09-Mar-2005
@@ -83,18 +83,23 @@ resourcestring
     'Silk icons(www.famfamfam.com)'+ SLineBreak;
 
   SAboutBoxCreditsTranslations =
+    'Translation manager: Lübbe Onken'+ SLineBreak +
     'Chinese translation by "Love China"'+ SLineBreak +
     'French translation by Groupe AmiensPython'+ SLineBreak +
     'Japanese translation by Tokibito'+ SLineBreak +
     'Russian translation by Aleksander Dragunkin'+ SLineBreak +
     'Slovak translation by Marian Denes'+ SLineBreak +
     'Spanish translation by Javier Pimas'+ SLineBreak +
-    'Gernan translation by Daniel Frost'+ SLineBreak;
+    'German translation by Daniel Frost'+ SLineBreak;
+
+   SAboutBoxCreditsThemeDesign =
+     'Tanmaya Meher (www.github.com/tanmayameher)'+ SLineBreak +
+     'jprzywoski (www.github.com/jprzywoski)'+ SLineBreak;
 
    SAboutBoxLinks =
     'The project home, Issue Tracker and source code repository are hosted at Github (www.github.com/pyscripter/pyscripter)'+
     SLineBreak+
-    'Internet group support is avalable at https://groups.google.com/group/PyScripter'+
+    'Internet group support is available at https://groups.google.com/group/PyScripter'+
     SLineBreak +
     'Please submit bug reports and questions about PyScripter to pyscripter@gmail.com.';
 
@@ -188,6 +193,11 @@ begin
   reCredits.Paragraph.Numbering := nsBullet;
   AddFormatText(reCredits,SAboutBoxCreditsTranslations);
   reCredits.Paragraph.Numbering := nsNone;
+  AddFormatText(reCredits,_('Theme design') + ':' + SLineBreak, [fsItalic]);
+  reCredits.Paragraph.Numbering := nsBullet;
+  AddFormatText(reCredits,SAboutBoxCreditsThemeDesign);
+  reCredits.Paragraph.Numbering := nsNone;
+
   reCredits.SelStart := 0;
   reCredits.SelLength := 0;
   reCredits.ReadOnly := True;

@@ -79,6 +79,14 @@ inherited PythonIIForm: TPythonIIForm
         OnMouseDown = SynEditMouseDown
         OnMouseWheelDown = SynEditMouseWheelDown
         OnMouseWheelUp = SynEditMouseWheelUp
+        CodeFolding.GutterShapeSize = 11
+        CodeFolding.CollapsedLineColor = clGrayText
+        CodeFolding.FolderBarLinesColor = clGrayText
+        CodeFolding.IndentGuidesColor = clGray
+        CodeFolding.IndentGuides = True
+        CodeFolding.ShowCollapsedLine = False
+        CodeFolding.ShowHintMark = True
+        UseCodeFolding = False
         BorderStyle = bsNone
         Gutter.BorderStyle = gbsNone
         Gutter.Font.Charset = DEFAULT_CHARSET
@@ -129,6 +137,7 @@ inherited PythonIIForm: TPythonIIForm
   end
   object SynCodeCompletion: TSynCompletionProposal
     Options = [scoCaseSensitive, scoLimitToMatchedText, scoUseInsertList, scoUsePrettyText, scoUseBuiltInTimer, scoEndCharCompletion, scoCompleteWithTab, scoCompleteWithEnter]
+    Width = 200
     EndOfTokenChr = '()[]{}. =:'
     TriggerChars = '.'
     Font.Charset = DEFAULT_CHARSET
